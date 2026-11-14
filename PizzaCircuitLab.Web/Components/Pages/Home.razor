@@ -1,0 +1,263 @@
+@page "/"
+@rendermode InteractiveServer
+@implements IDisposable
+@inject CircuitSession Session
+@inject CircuitRegistry Registry
+@inject PersistentComponentState ApplicationState
+@inject IJSRuntime JS
+@inject ILogger<Home> Logger
+
+<PageTitle>Pizza Circuit Lab</PageTitle>
+
+@if (string.IsNullOrWhiteSpace(ControlOptions.Value.Key))
+{
+    <div class="standalone-banner" role="alert"><b>Standalone instance.</b> This copy of pizza-web was not started by the Aspire AppHost, so the Aspire Dashboard cannot see or control its circuits. Use the pizza-web link in the Aspire Dashboard instead.</div>
+}
+<div class="shell">
+    <header class="topbar">
+        <div class="brand"><div class="brand-icon">🍕</div><div><b>Pizza Circuit Lab</b><small>.NET 11 · Blazor Interactive Server · Aspire</small></div></div>
+        <span class="version">INTERACTIVE SERVER DEMO</span>
+    </header>
+    <section class="hero">
+        <div><div class="eyebrow">RESILIENCE PLAYGROUND</div><h1>Build your pizza.<br /><em>Break the connection.</em></h1><p>An editable order for exploring what happens to a Blazor Server circuit when the tab is hidden, the network drops, or an operator pauses it from the Aspire Dashboard.</p></div>
+        <div class="hero-pizza" aria-hidden="true">🍕</div>
+    </section>
+    <div class="columns">
+        <main>
+            <div class="panel">
+                <div class="section-title"><span>01</span><div><h2>Design your pizza</h2><p>Inputs below are bound to serializable persistent state.</p></div></div>
+                <div class="field-row">
+                    <label>Pizza<select @bind="Draft.Pizza"><option>Margherita</option><option>Pepperoni</option><option>Four Cheese</option><option>Veggie Supreme</option><option>BBQ Chicken</option></select></label>
+                    <label>Size<select @bind="Draft.Size"><option>Small</option><option>Medium</option><option>Large</option><option>XL</option></select></label>
+                </div>
+                <div class="field-row">
+                    <label>Crust<select @bind="Draft.Crust"><option>Classic</option><option>Thin</option><option>Stuffed</option></select></label>
+                    <label>Quantity<input type="number" min="1" max="10" @bind="Draft.Quantity" /></label>
+                </div>
+                <div class="field-label">Extra toppings</div>
+                <div class="checks"><label><input type="checkbox" @bind="Draft.ExtraCheese" /> Extra cheese</label><label><input type="checkbox" @bind="Draft.Mushrooms" /> Mushrooms</label><label><input type="checkbox" @bind="Draft.Olives" /> Olives</label></div>
+            </div>
+            <div class="panel">
+                <div class="section-title"><span>02</span><div><h2>Delivery details</h2><p>Change these fields before pausing, switching tabs or restarting the resource.</p></div></div>
+                <div class="field-row"><label>Your name<input placeholder="e.g. Ada Lovelace" @bind="Draft.CustomerName" @bind:event="oninput" /></label><label>Phone<input type="tel" placeholder="+66..." @bind="Draft.Phone" @bind:event="oninput" /></label></div>
+                <label>Fulfillment<select @bind="Draft.Fulfillment"><option>Delivery</option><option>Pickup</option></select></label>
+                @if (Draft.Fulfillment == "Delivery")
+                {
+                    <label>Address<input placeholder="Building, road, apartment..." @bind="Draft.Address" @bind:event="oninput" /></label>
+                }
+                <label>Order notes<textarea rows="3" placeholder="No onions, please..." @bind="Draft.Notes" @bind:event="oninput"></textarea></label>
+                <div class="actions"><button class="outline" @onclick="ResetDraft">Reset draft</button><button class="primary" @onclick="PlaceDemoOrder">Place DEMO order</button></div>
+                @if (!string.IsNullOrEmpty(Message)) { <div class="notice">@Message</div> }
+            </div>
+        </main>
+        <aside>
+            <div class="panel status-panel">
+                <div class="section-title"><span class="live-dot @(IsInteractive ? "" : "idle")"></span><div><h2>Circuit diagnostics</h2><p>Reported by the server. See the browser monitor for what this tab observes.</p></div></div>
+                @* lab.js reads the IDs from here; they stay in the DOM while the circuit is paused. *@
+                <div id="lab-server-state" hidden data-session-id="@SessionId" data-circuit-id="@CircuitId" data-generation="@_attach?.Generation"></div>
+                <div class="metric"><small>Session ID · survives pause/resume</small><code>@SessionId</code></div>
+                <div class="metric">
+                    <small>Circuit ID · current</small>
+                    <code>@(CircuitId ?? "none yet (prerendered over HTTP)")</code>
+                </div>
+                <div class="metric">
+                    <small>State restoration</small>
+                    @if (_attach is null)
+                    {
+                        <span class="metric-text">Waiting for the interactive circuit.</span>
+                    }
+                    else if (_attach.RestoredFromCircuitId is null)
+                    {
+                        <span class="metric-text">Circuit #1 of this session. Nothing restored from a pause.</span>
+                    }
+                    else
+                    {
+                        <span class="metric-text">Circuit #@_attach.Generation of this session. State was restored at @_attach.RestoredAt?.ToLocalTime().ToString("HH:mm:ss") into this <b>new</b> circuit; paused circuit <code>@Short(_attach.RestoredFromCircuitId)</code> no longer exists.</span>
+                    }
+                </div>
+                <div class="metric history">
+                    <small>This session's circuits · newest first</small>
+                    @if (_history.Count == 0)
+                    {
+                        <span class="metric-text">No circuit yet.</span>
+                    }
+                    else
+                    {
+                        <table>
+                            <thead><tr><th>#</th><th>Circuit ID</th><th>Started</th><th>What happened</th></tr></thead>
+                            <tbody>
+                                @foreach (var entry in _history.Reverse())
+                                {
+                                    <tr class="@(entry.EndedAt is null ? "current" : "ended")">
+                                        <td>@entry.Generation</td>
+                                        <td><code>@Short(entry.CircuitId)</code></td>
+                                        <td>@Clock(entry.OpenedAt)</td>
+                                        <td>@Describe(entry)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                </div>
+                <div class="metric"><small>Circuits on this server instance</small><span class="metric-text"><b>@_counts.Connected</b> connected · <b>@_counts.Disconnected</b> disconnected · <b>@_counts.Paused</b> paused</span></div>
+                <div class="metric-pair">
+                    <div class="metric"><small>Draft actions · persisted</small><strong>@DraftRevision</strong></div>
+                    <div class="metric"><small>Component instance · not persisted</small><code>@InstanceId</code></div>
+                </div>
+
+                <div class="field-label">Experiment 1 · hidden-tab auto-pause</div>
+                <p class="tip">Switch to another browser tab for more than <b>@AutoPauseSeconds seconds</b>, then come back. The browser pauses the circuit by itself and resumes on return: the session ID and draft survive, the circuit ID and component instance change. Returning sooner cancels the timer. An unsaved, focused text field postpones the pause.</p>
+                <div class="field-label">Experiment 2 · operator pause from Aspire</div>
+                <p class="tip">In <b>Aspire Dashboard → Resources → pizza-web</b> run <i>Pause circuit</i> or <i>Pause all circuits</i>. This page has no pause or resume control: it stays paused, even across tab switches, until an operator runs <i>Resume</i>.</p>
+                <div class="field-label">Experiment 3 · lost connection and restart</div>
+                <p class="tip">DevTools → Network → Offline, then Online: the <b>same</b> circuit reconnects. Stop or restart pizza-web in Aspire: the process and its in-memory state are gone, so the page reloads as a new session.</p>
+            </div>
+            <div class="panel summary"><h2>Live order preview</h2><p><b>@Draft.Quantity × @Draft.Size @Draft.Pizza</b></p><p>@Draft.Crust crust</p><p>@Toppings</p><p>👤 @(string.IsNullOrWhiteSpace(Draft.CustomerName) ? "No name yet" : Draft.CustomerName)</p><p>📍 @Draft.Fulfillment</p><hr /><div class="total"><span>Estimated total</span><strong>฿@EstimatedTotal</strong></div><small>Demo pricing only · no payment or database</small></div>
+        </aside>
+    </div>
+    <footer><b>Teaching note:</b> the draft, the draft-action counter and the session ID are marked [PersistentState]; the component instance ID and the notice message are not. Pausing persists state and disposes the circuit; resuming restores that state into a new circuit. Stopping the resource is a different operation: it ends the process.</footer>
+</div>
+
+@code {
+    // The framework assigns [PersistentState] properties itself and supplies null when there is
+    // nothing to restore. Ignoring null keeps the draft usable without ever discarding edits.
+    private PizzaDraft _draft = new();
+
+    [PersistentState]
+    public PizzaDraft? PersistedDraft
+    {
+        get => _draft;
+        set { if (value is not null) _draft = value; }
+    }
+
+    [PersistentState]
+    public int DraftRevision { get; set; }
+
+    /// <summary>Stable across prerender → interactive and pause → resume; a page reload starts a new one.</summary>
+    [PersistentState]
+    public string? SessionId { get; set; }
+
+    [Inject]
+    private Microsoft.Extensions.Options.IOptions<CircuitLabOptions> LabOptions { get; set; } = default!;
+
+    [Inject]
+    private Microsoft.Extensions.Options.IOptions<CircuitControlOptions> ControlOptions { get; set; } = default!;
+
+    private readonly string InstanceId = Guid.NewGuid().ToString("N")[..8];
+    private string? Message;
+    private AttachResult? _attach;
+    private RegistrySnapshot _counts = new(default, "", 0, 0, 0, 0, []);
+    private IReadOnlyList<CircuitHistoryEntry> _history = [];
+    private PersistingComponentStateSubscription _persisting;
+    private DotNetObjectReference<Home>? _selfReference;
+    private bool _disposed;
+
+    private PizzaDraft Draft => _draft;
+    private bool IsInteractive => Session.Circuit is not null;
+    private string? CircuitId => Session.Circuit?.Id;
+    private string AutoPauseSeconds => LabOptions.Value.AutoPauseHiddenDelay.TotalSeconds.ToString("0.#");
+
+    private string Toppings => string.Join(", ", new[] {
+        Draft.ExtraCheese ? "Extra cheese" : null,
+        Draft.Mushrooms ? "Mushrooms" : null,
+        Draft.Olives ? "Olives" : null
+    }.Where(x => x is not null).DefaultIfEmpty("No extras"));
+
+    private int EstimatedTotal
+    {
+        get
+        {
+            int basePrice = Draft.Size switch { "Small" => 159, "Large" => 279, "XL" => 339, _ => 219 };
+            int extras = (Draft.ExtraCheese ? 30 : 0) + (Draft.Mushrooms ? 25 : 0) + (Draft.Olives ? 20 : 0);
+            return (basePrice + extras) * Math.Clamp(Draft.Quantity, 1, 10);
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        SessionId ??= Guid.NewGuid().ToString("N");
+        if (Session.Circuit is not { } circuit) return; // prerendering: no circuit to track yet
+
+        _attach = Registry.Attach(SessionId, circuit);
+        // Runs only when the framework persists this circuit, i.e. while it is being paused or evicted.
+        _persisting = ApplicationState.RegisterOnPersisting(() =>
+        {
+            Registry.StatePersisted(circuit.Id);
+            return Task.CompletedTask;
+        });
+        _counts = Registry.Snapshot();
+        _history = Registry.GetHistory(SessionId);
+        Registry.Changed += OnRegistryChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || !IsInteractive) return;
+
+        // JS interop is only attempted here, where a live connection is guaranteed to have existed.
+        // The circuit can still be paused or dropped while the call is in flight; that is expected.
+        _selfReference = DotNetObjectReference.Create(this);
+        try
+        {
+            await JS.InvokeVoidAsync("pizzaLab.bindCircuit", _selfReference);
+        }
+        catch (Exception ex) when (ex is JSDisconnectedException or OperationCanceledException)
+        {
+            Logger.LogDebug("Circuit {CircuitId} went away before the browser monitor was bound ({Reason})", CircuitId, ex.GetType().Name);
+        }
+        catch (JSException ex)
+        {
+            Logger.LogWarning(ex, "Browser monitor script failed to bind for circuit {CircuitId}", CircuitId);
+        }
+    }
+
+    /// <summary>Called by lab.js on visibilitychange while the circuit is connected.</summary>
+    [JSInvokable]
+    public void ReportTabVisibility(string state)
+    {
+        if (CircuitId is { } id && state is "visible" or "hidden")
+            Registry.ReportVisibility(id, state == "hidden");
+    }
+
+    private void OnRegistryChanged()
+    {
+        if (_disposed) return;
+        _ = InvokeAsync(() =>
+        {
+            if (_disposed) return;
+            _counts = Registry.Snapshot();
+            if (SessionId is not null) _history = Registry.GetHistory(SessionId);
+            StateHasChanged();
+        });
+    }
+
+    private void ResetDraft() { _draft = new(); DraftRevision++; Message = "Draft reset."; }
+    private void PlaceDemoOrder() { DraftRevision++; Message = $"DEMO ONLY: {Draft.Quantity} {Draft.Pizza} pizza(s) recorded in memory. No order was sent."; }
+    private static string Clock(DateTimeOffset? time) => time?.ToLocalTime().ToString("HH:mm:ss") ?? "";
+
+    private static string Describe(CircuitHistoryEntry entry)
+    {
+        var reconnects = entry.Reconnects == 0 ? "" : $" · connection lost and restored {entry.Reconnects}× (same circuit)";
+        if (entry.EndedAt is null) return "current circuit" + reconnects;
+        var ending = entry.Ending switch
+        {
+            nameof(PauseReason.TabAutoPause) => "paused: tab was hidden",
+            nameof(PauseReason.Administrative) => "paused by operator",
+            nameof(PauseReason.DisconnectedEviction) => "evicted after a lost connection",
+            "Closed" => "closed",
+            _ => "replaced"
+        };
+        return $"{ending} at {Clock(entry.EndedAt)}{reconnects}";
+    }
+
+    private static string Short(string id) => id.Length <= 10 ? id : id[..10] + "…";
+
+    public void Dispose()
+    {
+        _disposed = true;
+        Registry.Changed -= OnRegistryChanged;
+        _persisting.Dispose();
+        _selfReference?.Dispose();
+    }
+}
+

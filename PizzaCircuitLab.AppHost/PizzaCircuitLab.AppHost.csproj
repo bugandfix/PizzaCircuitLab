@@ -1,0 +1,13 @@
+<Project Sdk="Aspire.AppHost.Sdk/13.6.5">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net11.0</TargetFramework>
+    <AspireUseCliBundle>true</AspireUseCliBundle>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Aspire.Hosting.AppHost" Version="13.6.5" />
+    <ProjectReference Include="..\PizzaCircuitLab.Web\PizzaCircuitLab.Web.csproj" />
+  </ItemGroup>
+</Project>

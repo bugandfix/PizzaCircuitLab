@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="PizzaCircuitLab.AppHost/PizzaCircuitLab.AppHost.csproj" />
+  <Project Path="PizzaCircuitLab.Web/PizzaCircuitLab.Web.csproj" />
+  <Project Path="PizzaCircuitLab.Tests/PizzaCircuitLab.Tests.csproj" />
+</Solution>

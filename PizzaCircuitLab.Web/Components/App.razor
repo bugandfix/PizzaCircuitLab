@@ -1,0 +1,42 @@
+@using Microsoft.Extensions.Options
+@inject IOptions<CircuitLabOptions> LabOptions
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <title>Pizza Circuit Lab · .NET 11 + Aspire</title>
+    <link rel="stylesheet" href="site.css" />
+    <HeadOutlet />
+</head>
+<body data-autopause-seconds="@LabOptions.Value.AutoPauseHiddenDelay.TotalSeconds.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)">
+    <Routes />
+
+    @* Everything below is static HTML owned by lab.js: it keeps working while the circuit is paused or gone. *@
+    <aside id="browser-monitor" class="browser-monitor" aria-live="polite">
+        <div class="monitor-head"><b>Browser monitor</b><span>observed locally by this tab</span></div>
+        <dl>
+            <dt>Tab visibility</dt><dd id="bm-visibility">–</dd>
+            <dt>Circuit link</dt><dd id="bm-link">–</dd>
+            <dt>Admin hold</dt><dd id="bm-hold">–</dd>
+        </dl>
+        <ol id="bm-log" class="monitor-log"></ol>
+    </aside>
+
+    @* Blazor drives this element instead of its built-in reconnect dialog. It deliberately has no buttons. *@
+    <div id="components-reconnect-modal" class="lab-overlay" role="status">
+        <div class="lab-overlay-card">
+            <div class="lab-overlay-icon" aria-hidden="true">⏸</div>
+            <h2 id="lab-overlay-title">Connection interrupted</h2>
+            <p id="lab-overlay-text"></p>
+        </div>
+    </div>
+
+@* Shown by Blazor for an unhandled error. lab.js hides it when the cause is only a failed reconnect attempt. *@
+    <div id="blazor-error-ui" role="alert">Blazor reported an unhandled error on this page. If it stops responding, reload it to start a new session; details are in the pizza-web logs in the Aspire Dashboard.</div>
+
+    <script src="lab.js"></script>
+    <script src="_framework/blazor.web.js"></script>
+</body>
+</html>
